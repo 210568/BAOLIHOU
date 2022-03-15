@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags-ignore:
+      - '*.*' # version-tagged commits are releases which have their own workflow
+    paths-ignore:
+      - '.github/**' # this ci.yml is also excluded so you need to re-run it explicitly if necessary
+      - LICENSE
+      - README.md
+  pull_request:
+    branches: [master]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v1 # v1 keeps tags
+        with:
+          fetch-depth: 100 # for revision index in version and the `has-changed-path` action
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '15'
+
+      - name: Build
+        run: yarn && yarn build
+
+      - name: Get version and SHA
+        run: node scripts/action-helper.js ci
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v2
+        continue-on-error: true
+        with:
+          name: 'Violentmonkey-test-webext-${{ env.GIT_DESCRIBE }}'
+          path: 'dist/*'
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload to Transifex - check src
+        uses: marceloprado/has-changed-path@v1
+        id: changed-path-src
+        with:
+          paths: src
+      - name: Upload to Transifex
+        if: steps.changed-path-src.outputs.changed == 'true'
+        run: 'curl -i -L --user api:$TRANSIFEX_TOKEN -X PUT -F file=@dist/_locales/en/messages.json https://www.transifex.com/api/2/project/violentmonkey-nex/resource/messagesjson/content/'
+        env:
+          TRANSIFEX_TOKEN: ${{ secrets.TRANSIFEX_TOKEN }}
